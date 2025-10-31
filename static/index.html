@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Song Cloud Library</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/wavesurfer.js@7/dist/wavesurfer.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+    <script src="/config.js"></script>
+    <style>
+        :root{
+            --bg: linear-gradient(135deg,#0f1724 0%, #1f2a44 100%);
+            --card: rgba(255,255,255,0.04);
+            --glass: rgba(255,255,255,0.03);
+            --accent: #7b5bd6;
+            --accent-2: #4fd1c5;
+            --muted: rgba(255,255,255,0.6);
+            --success: #4CAF50;
+            --error: #ff6b6b;
+        }
+
+        html,body{height:100%;}
+        body{margin:0;font-family:Inter,Segoe UI,system-ui,Arial;background:var(--bg);color:#fff;}
+        .container{max-width:1200px;margin:28px auto;padding:0 20px}
+        h1{font-size:2.6rem;margin:6px 0 22px;text-align:center}
+        .animated-title{display:inline-block;background:linear-gradient(90deg,var(--accent),var(--accent-2),#9f7aea);background-size:200% 200%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:titleShift 6s linear infinite}
+        @keyframes titleShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+
+        #upload-zone{border:2px dashed rgba(255,255,255,0.08);border-radius:18px;padding:28px;text-align:center;margin-bottom:18px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);transition:all .25s ease}
+        #upload-zone:hover{transform:translateY(-4px);box-shadow:0 10px 30px rgba(0,0,0,0.45);border-color:var(--accent)}
+
+        #search{width:100%;padding:12px 18px;border-radius:999px;border:none;background:rgba(255,255,255,0.04);color:var(--muted);box-shadow:inset 0 1px 0 rgba(255,255,255,0.02);margin-bottom:20px}
+
+        .song-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+        .song-card{background:var(--card);border-radius:16px;padding:18px;position:relative;overflow:hidden;backdrop-filter:blur(6px);box-shadow:0 6px 18px rgba(2,6,23,0.6);transition:transform .25s ease,box-shadow .25s ease}
+        .song-card:hover{transform:translateY(-8px) scale(1.01);box-shadow:0 18px 40px rgba(2,6,23,0.7)}
+        .song-card.skeleton{height:160px;background:linear-gradient(90deg,#111 0%, #1b1f2a 50%, #111 100%)}
+        .song-title{font-size:1.1rem;margin:0 0 6px 0;font-weight:700}
+        .song-metadata{font-size:.86rem;color:var(--muted);margin-bottom:10px}
+
+        .play-btn{background:linear-gradient(90deg,var(--accent),var(--accent-2));color:white;border:none;padding:8px 14px;border-radius:999px;cursor:pointer;font-weight:600;box-shadow:0 8px 24px rgba(123,91,214,0.12);transition:transform .18s ease,box-shadow .18s ease}
+        .play-btn:hover{transform:translateY(-3px);box-shadow:0 18px 36px rgba(123,91,214,0.18)}
+
+        .waveform-container{height:72px;background:var(--glass);border-radius:10px;overflow:hidden;margin:14px 0}
+        .controls{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        .control-group{background:rgba(255,255,255,0.02);padding:10px;border-radius:10px}
+
+        .track-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+        .track-list button{background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.03);padding:8px;border-radius:10px;text-align:left;cursor:pointer}
+        .track-list button.playing{background:linear-gradient(90deg,var(--accent),var(--accent-2));color:white;border:none}
+
+        /* spinner */
+        #loading-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:2200}
+        #loading-overlay .backdrop{position:absolute;inset:0;background:linear-gradient(180deg,rgba(3,6,23,0.6),rgba(3,6,23,0.75));backdrop-filter:blur(5px)}
+        #loading-overlay .box{position:relative;padding:24px 28px;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:8px}
+        .spinner{width:64px;height:64px;border-radius:50%;border:6px solid rgba(255,255,255,0.06);border-top-color:var(--accent);animation:spin 1s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+
+        /* 3D tilt */
+        .tilt{transform-style:preserve-3d}
+
+        /* skeleton shimmer */
+        .skeleton::after{content:'';position:absolute;left:-150%;top:0;width:50%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.03),transparent);animation:shimmer 1.6s infinite}
+        @keyframes shimmer{100%{left:150%}}
+
+        /* small responsive tweaks */
+        @media (max-width:600px){.song-grid{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+    <div class="container">
+    <h1><span class="animated-title">🎵 Song Cloud Library</span></h1>
+        
+        <div id="upload-zone" onclick="document.getElementById('file-inputs').click()">
+            <h3>Upload New Song</h3>
+            <p>📁 Drag and drop or click to upload Instrumental + Full version</p>
+            <input type="file" id="file-inputs" multiple accept="audio/*" style="display:none" onchange="handleUpload(event)">
+        </div>
+        
+        <input type="text" id="search" placeholder="Search songs..." onkeyup="filterFolders()">
+        
+        <div class="song-grid" id="song-list"></div>
+
+        <div id="toast" class="toast" style="display: none;"></div>
+    </div>
+    </style>
+    <script>
+        //Fetch actual folder contents (instrumental/full URLs) and render track buttons into the card
+        async function fetchAndShowTracks(folderName, cardId) {
+            try {
+                const res = await fetch(`${window.appConfig.API_BASE_URL}${window.appConfig.ENDPOINTS.FOLDER_CONTENTS}/${encodeURIComponent(folderName)}/contents`);
+                if (!res.ok) throw new Error('Failed to fetch folder contents');
+                const data = await res.json();
+                const listEl = document.querySelector(`.song-card[data-name="${folderName}"] .track-list`);
+                if (!listEl) return;
+                const files = [];
+                if (data.instrumental) files.push({ name: data.instrumental_name || 'instrumental', url: `${window.appConfig.API_BASE_URL}/api/stream/${encodeURIComponent(folderName)}/${encodeURIComponent(data.instrumental_name || data.instrumental.split('/').pop())}` });
+                if (data.full) files.push({ name: data.full_name || 'full', url: `${window.appConfig.API_BASE_URL}/api/stream/${encodeURIComponent(folderName)}/${encodeURIComponent(data.full_name || data.full.split('/').pop())}` });
+                if (files.length === 0) { listEl.innerHTML = 'No tracks found.'; return; }
+                listEl.innerHTML = files.map(file => `<button onclick="playTrack('${file.url}','${cardId}', this)">${file.name}</button>`).join('');
+            } catch (err) {
+                console.error('fetchAndShowTracks error', err);
+                showToast('Failed to load tracks', 'error');
+            }
+        }
+    </script>
+</head>
+<body>
+            <div class="spinner"></div>
+            <div id="loading-text">Loading...</div>
+            <div id="loading-percent" style="color:rgba(255,255,255,0.8)"></div>
+        </div>
+    </div>
+    
+    <script>
+        let allFolders = []; // Holds the master list of folders
+        let currentPlayer = null;
+        let currentWavesurfer = null;
+        let isPlaying = false;
+        let activeCardId = null;
+        let activeProgressInterval = null;
+
+        // --- Toast & Loading ---
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.style.display = 'block';
+            toast.style.background = type === 'success' ? 'var(--success)' : 'var(--error)';
+            setTimeout(() => { toast.style.display = 'none'; }, 3000);
+        }
+        function showLoadingOverlay(text = 'Loading') {
+            document.getElementById('loading-text').textContent = text;
+            document.getElementById('loading-overlay').style.display = 'flex';
+        }
+        function hideLoadingOverlay() {
+            document.getElementById('loading-overlay').style.display = 'none';
+        }
+
+        // --- UPLOAD ---
+        async function handleUpload(e) {
+            const files = Array.from(e.target.files);
+            if (files.length !== 2) {
+                showToast('Please select exactly two files', 'error');
+                return;
+            }
+            
+            const songName = prompt('Enter song folder name (e.g., "Bohemian Rhapsody"):');
+            if (!songName) return;
+            
+            // You can expand this to ask for artist, genre, etc.
+            const metadata = { artist: 'Unknown', genre: 'Unknown' };
+
+            const form = new FormData();
+            form.append('folder_name', songName);
+            form.append('metadata', JSON.stringify(metadata));
+            form.append('instrumental', files.find(f => f.name.toLowerCase().includes('inst')) || files[0]);
+            form.append('full', files.find(f => f.name.toLowerCase().includes('full')) || files[1]);
+            
+            showLoadingOverlay('Uploading files...');
+            try {
+                const res = await fetch(`${window.appConfig.API_BASE_URL}${window.appConfig.ENDPOINTS.UPLOAD}`, { method: 'POST', body: form });
+                if (res.ok) {
+                    showToast('Song uploaded successfully!');
+                    loadFolders(); // Refresh the list
+                } else {
+                    const data = await res.json();
+                    showToast(data.error || 'Upload failed', 'error');
+                }
+            } catch (error) {
+                showToast('Network error during upload', 'error');
+            }
+            hideLoadingOverlay();
+        }
+
+        // --- DATA FETCHING & RENDERING ---
+        async function loadFolders() {
+            // show skeletons immediately for snappier UI
+            showSkeletons(6);
+            showLoadingOverlay('Loading songs...');
+            try {
+                const res = await fetch(`${window.appConfig.API_BASE_URL}${window.appConfig.ENDPOINTS.LIST_FOLDERS}`);
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(`API Error: ${data.error || res.statusText}`);
+                }
+                allFolders = await res.json();
+                renderFolders(allFolders);
+                enableCardInteractions();
+            } catch (error) {
+                console.error('Failed to load folders:', error);
+                showToast(`Failed to load songs: ${error.message}`, 'error');
+            }
+            hideLoadingOverlay();
+        }
+
+        function renderFolders(foldersToRender) {
+            const list = document.getElementById('song-list');
+            list.innerHTML = foldersToRender.map(folder => {
+                const cardId = folder.name.replace(/[^a-zA-Z0-9]/g, '-');
+                
+                // === THIS IS THE CORRECTED LINE ===
+                const metadata = folder.metadata || {};
+                // ==================================
+
+                // Build track list HTML (audio_files may not be present in simple folder listing).
+                const filesArray = folder.audio_files || [];
+                let trackListHtml = '';
+                if (filesArray.length > 0) {
+                    trackListHtml = filesArray.map(file => {
+                        const fileId = file.name.replace(/[^a-zA-Z0-9]/g, '-');
+                        return `<button id="track-${cardId}-${fileId}" onclick="playTrack('${file.url}', '${cardId}', this)">${file.name}</button>`;
+                    }).join('');
+                } else {
+                    // Provide a quick-load button that fetches folder contents from the API
+                    trackListHtml = `<button onclick="fetchAndShowTracks('${folder.name}','${cardId}')">Load tracks</button>`;
+                }
+
+                return `
+                <div class="song-card tilt" data-name="${folder.name}">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                        <h3 class="song-title">${folder.name}</h3>
+                        <button class="icon-button" onclick="toggleFavorite('${folder.name}', this)" title="Favorite">☆</button>
+                    </div>
+                    <div class="song-metadata">
+                        <span>${metadata.artist || 'Unknown Artist'}</span> •
+                        <span>${metadata.genre || 'Unknown Genre'}</span>
+                    </div>
+                    
+                    <div class="track-list">${trackListHtml.length ? trackListHtml : 'No tracks found.'}</div>
+
+                    <div class="waveform-container" id="waveform-cont-${cardId}">
+                        <div id="waveform-${cardId}"></div>
+                    </div>
+                    <div class="controls" id="controls-${cardId}">
+                        <div class="control-group">
+                            <button id="play-btn-${cardId}" class="play-btn" onclick="togglePlay()">▶ Play</button>
+                            <div class="time-display">
+                                <span id="current-time-${cardId}">0:00</span> / 
+                                <span id="duration-${cardId}">0:00</span>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label>Speed: <input type="range" id="speed-${cardId}" min="0.25" max="3" step="0.25" value="1" oninput="updateSpeed(this.value)"><span id="speed-display-${cardId}">1.0x</span></label>
+                            <label>Volume: <input type="range" id="volume-${cardId}" min="0" max="1" step="0.1" value="1" oninput="updateVolume(this.value)"></label>
+                            <label><input type="checkbox" id="loop-${cardId}" onchange="toggleLoop(this.checked)"> Loop</label>
+                        </div>
+                    </div>
+                </div>
+            `}).join('') || '<div class="no-results">No songs found</div>';
+        }
+
+
+        function filterFolders() {
+            const query = document.getElementById('search').value.toLowerCase();
+            const filtered = allFolders.filter(f => 
+                f.name.toLowerCase().includes(query) ||
+                (f.metadata?.artist || '').toLowerCase().includes(query) ||
+                (f.metadata?.genre || '').toLowerCase().includes(query)
+            );
+            renderFolders(filtered);
+        }
+
+        // --- UI Helpers: skeletons and interactions ---
+        function showSkeletons(count = 4) {
+            const list = document.getElementById('song-list');
+            let html = '';
+            for (let i = 0; i < count; i++) {
+                html += `<div class="song-card skeleton" style="height:140px"></div>`;
+            }
+            list.innerHTML = html;
+        }
+
+        function enableCardInteractions() {
+            // tilt effect on mousemove
+            document.querySelectorAll('.song-card.tilt').forEach(card => {
+                card.addEventListener('mousemove', (e) => {
+                    const rect = card.getBoundingClientRect();
+                    const x = e.clientX - rect.left; // x position within the element.
+                    const y = e.clientY - rect.top;  // y position within the element.
+                    const cx = rect.width/2;
+                    const cy = rect.height/2;
+                    const dx = (x - cx) / cx; // -1 .. 1
+                    const dy = (y - cy) / cy;
+                    const tiltX = dy * 6; // degrees
+                    const tiltY = dx * -6;
+                    card.style.transform = `translateZ(0) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
+                });
+                card.addEventListener('mouseleave', () => {
+                    card.style.transform = '';
+                });
+            });
+        }
+
+        function toggleFavorite(name, btn) {
+            const favs = JSON.parse(localStorage.getItem('favorites') || '[]');
+            const idx = favs.indexOf(name);
+            if (idx === -1) { favs.push(name); btn.textContent = '★'; btn.classList.add('favorite'); showToast('Added to favorites'); }
+            else { favs.splice(idx,1); btn.textContent = '☆'; btn.classList.remove('favorite'); showToast('Removed from favorites'); }
+            localStorage.setItem('favorites', JSON.stringify(favs));
+        }
+
+        // --- AUDIO PLAYER LOGIC ---
+        function playTrack(streamUrl, cardId, trackButton) {
+            if (activeCardId !== cardId) {
+                // Stop and hide player on the *old* card
+                if (activeCardId) {
+                    document.getElementById(`controls-${activeCardId}`).style.display = 'none';
+                    document.getElementById(`waveform-cont-${activeCardId}`).style.display = 'none';
+                }
+                
+                // Stop old player
+                if (currentPlayer) currentPlayer.unload();
+                if (currentWavesurfer) currentWavesurfer.destroy();
+                if (activeProgressInterval) clearInterval(activeProgressInterval);
+                
+                // Show player on the *new* card
+                document.getElementById(`controls-${cardId}`).style.display = 'grid';
+                document.getElementById(`waveform-cont-${cardId}`).style.display = 'block';
+                activeCardId = cardId;
+            }
+
+            // Highlight the new track
+            document.querySelectorAll(`.track-list button`).forEach(btn => btn.classList.remove('playing'));
+            if(trackButton) trackButton.classList.add('playing');
+            
+            showLoadingOverlay('Loading audio...');
+            
+            currentPlayer = new Howl({
+                src: [streamUrl],
+                html5: true,
+                onload: () => {
+                    hideLoadingOverlay();
+                    // Set default values from controls
+                    updateSpeed(document.getElementById(`speed-${cardId}`).value);
+                    updateVolume(document.getElementById(`volume-${cardId}`).value);
+                    toggleLoop(document.getElementById(`loop-${cardId}`).checked);
+                    currentPlayer.play(); // Autoplay on load
+                },
+                onloaderror: (id, err) => { hideLoadingOverlay(); showToast('Failed to load audio', 'error'); },
+                onplayerror: (id, err) => { hideLoadingOverlay(); showToast('Playback error', 'error'); },
+                onplay: () => { isPlaying = true; document.getElementById(`play-btn-${cardId}`).textContent = '⏸ Pause'; },
+                onpause: () => { isPlaying = false; document.getElementById(`play-btn-${cardId}`).textContent = '▶ Play'; },
+                onend: () => { isPlaying = false; document.getElementById(`play-btn-${cardId}`).textContent = '▶ Play'; }
+            });
+
+            // Initialize Wavesurfer
+            currentWavesurfer = WaveSurfer.create({
+                container: `#waveform-${cardId}`,
+                waveColor: '#764ba2', progressColor: '#4CAF50', cursorColor: '#fff',
+                barWidth: 2, barGap: 1, responsive: true, height: 60,
+                media: currentPlayer._sounds[0]._node
+            });
+            
+            currentWavesurfer.on('ready', () => updateDuration(currentPlayer.duration()));
+            currentWavesurfer.on('interaction', (newTime) => currentPlayer.seek(newTime * currentPlayer.duration()));
+
+            // Set up progress interval
+            activeProgressInterval = setInterval(() => {
+                if (currentPlayer && currentPlayer.playing()) {
+                    const seek = currentPlayer.seek() || 0;
+                    if(currentWavesurfer) currentWavesurfer.seekTo(seek / currentPlayer.duration());
+                    if(activeCardId) document.getElementById(`current-time-${activeCardId}`).textContent = formatTime(seek);
+                }
+            }, 500);
+        }
+        
+        // --- Player Control Functions ---
+        function togglePlay() {
+            if (!currentPlayer) return;
+            if (isPlaying) currentPlayer.pause();
+            else currentPlayer.play();
+        }
+        function updateSpeed(value) {
+            if (currentPlayer) {
+                currentPlayer.rate(parseFloat(value));
+                if(activeCardId) document.getElementById(`speed-display-${activeCardId}`).textContent = value + 'x';
+            }
+        }
+        function updateVolume(value) {
+            if (currentPlayer) currentPlayer.volume(parseFloat(value));
+        }
+        function toggleLoop(checked) {
+            if (currentPlayer) currentPlayer.loop(checked);
+        }
+        function updateDuration(duration) {
+            if(activeCardId) document.getElementById(`duration-${activeCardId}`).textContent = formatTime(duration || 0);
+        }
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        // --- Keyboard Shortcuts ---
+        document.addEventListener('keydown', e => {
+            if (e.code === 'Space' && e.target.tagName !== 'INPUT') {
+                e.preventDefault();
+                togglePlay();
+            }
+        });
+        
+        // Initialize
+        loadFolders();
+    </script>
+</body>
+</html>
